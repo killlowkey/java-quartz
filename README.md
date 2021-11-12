@@ -110,7 +110,7 @@ public static void main(String[] args) {
 
 ### 注解驱动
 
-> 该设计借鉴了 spring ，只需在方法中调用 @Schedule 注解，并设 cron 与 desc 字段，注册到 Scheduler 即可。Scheduler 扫描之后，会注册一个 CronTrigger 与 RunnableJob 调度任务。该注解不支持私有、含参、带有返回值的方法。
+> 该设计借鉴了 spring ，只需在方法上标注 @Schedule 注解，并设置 cron 与 desc 字段，调用 Scheduler#register 方法注册到 Scheduler 即可。Scheduler 扫描之后，会注册一个 CronTrigger 与 RunnableJob 调度任务。该注解不支持私有、含参、带有返回值的方法。
 
 ```java
 static class AnnotationTask {
