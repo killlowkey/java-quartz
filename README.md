@@ -12,7 +12,18 @@ Java-quartz 是一款任务定时调度框架，可以根据 cron、Duration、t
 
 
 
-## example
+## 配置
+
+> Java-quartz  提供一个配置机制，用于更改 Java-quartz  scheduler 的线程数量，在 classpath resources 目录下创建 schedule.properties 即可，如以下配置 example 所示。
+
+```properties
+schedule.coreThreadNum=5
+schedule.maxThreadNum=10
+```
+
+
+
+## examples
 ### cron trigger
 
 > 根据 cron 表达式来定时触发任务
@@ -66,7 +77,7 @@ public static void main(String[] args) {
     Job job = JobFactory.newRunnableJob("simple trigger", () -> {
         System.out.println("simple trigger");
     });
-    // 该任务每 10s 之后运行一次
+    // 该任务每 10s 运行一次
     Trigger trigger = TriggerFactory.newSimpleTrigger(Duration.ofSeconds(10))
     scheduler.scheduleJob(job, trigger);   
     scheduler.waitShutdown();
@@ -77,7 +88,7 @@ public static void main(String[] args) {
 
 ### time string Trigger
 
-> 根据传入的time string 进行解析，在指定的时间段运行，精确到毫秒，若当前时间超过了传入的时间则抛出异常；
+> 根据传入的time string 进行解析，在指定的时间点运行，精确到毫秒，若当前时间超过了传入的时间则抛出异常；
 >
 > 该触发器只会运行一次
 
@@ -110,9 +121,9 @@ static class AnnotationTask {
         System.out.println("instance annotation schedule task");
     }
 
-    @Schedule(cron = "1/5 * * * * * *", desc = "static class schedule")
+    @Schedule(cron = "1/5 * * * * * *", desc = "static method schedule")
     public static void classJob() {
-        System.out.println("static class annotation schedule task");
+        System.out.println("static method annotation schedule task");
     }
 }
 public static void main(String[] args) {
@@ -127,7 +138,7 @@ public static void main(String[] args) {
 
 context
 
-> 
+> Job 接口包含一个 context 方法，该 context  与 trigger context 进行绑定，从而共享一些数据。当 task 运行之后，可以从 context 中获取运行信息（records）等其它信息。
 
 ```java
 public static void main(String[] args) {
@@ -158,6 +169,6 @@ public static void main(String[] args) {
 
 ## 参考
 
-> 该项目的 cron 解析和接口设计来自 [go-quartz](https://github.com/reugn/go-quartz)，特别感谢！！！
+> 该项目的 cron 解析与接口设计来自 [go-quartz](https://github.com/reugn/go-quartz)，特别感谢！！！
 
 * https://github.com/reugn/go-quartz
