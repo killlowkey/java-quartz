@@ -135,8 +135,7 @@ public static void main(String[] args) {
 ```
 
 
-
-context
+### context
 
 > Job 接口包含一个 context 方法，该 context  与 trigger context 进行绑定，从而共享一些数据。当 task 运行之后，可以从 context 中获取运行信息（records）等其它信息。
 
