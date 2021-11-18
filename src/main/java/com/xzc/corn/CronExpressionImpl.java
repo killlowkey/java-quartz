@@ -64,7 +64,7 @@ public class CronExpressionImpl implements CronExpression {
 
         String[] ttok = date.toString().split(" ");
         String[] hms = ttok[3].split(":");
-        this.maxDays = maxDays(parseInt(ttok[2]), parseInt(ttok[5]));
+        this.maxDays = maxDays(monthIndex(ttok[1]), parseInt(ttok[5]));
 
         String second = nextSeconds(parseInt(hms[2]), fields[0]);
         String minute = nextMinutes(parseInt(hms[1]), fields[1]);
@@ -85,6 +85,18 @@ public class CronExpressionImpl implements CronExpression {
         }
 
         return null;
+    }
+
+    private int monthIndex(String month) {
+        Objects.requireNonNull(month, "month must not be null");
+
+        for (int i = 0; i < months.length; i++) {
+            if (months[i].equalsIgnoreCase(month)) {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private String nextSeconds(int prev, CronField field) {

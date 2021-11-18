@@ -9,14 +9,9 @@ import com.xzc.job.JobFactory;
 import com.xzc.queue.ScheduleQueue;
 import com.xzc.trigger.TriggerFactory;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.ThreadPoolExecutor;
-import java.util.concurrent.TimeUnit;
+import java.time.Duration;
+import java.util.*;
+import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
@@ -27,15 +22,17 @@ import java.util.concurrent.locks.ReentrantLock;
 public class StdScheduler implements Scheduler, Runnable {
 
     private ThreadPoolExecutor executor;
-    private final ScheduleQueue queue;
+    private final ScheduleQueue taskQueue;
     private boolean running;
     private final ScheduleConfig config;
     private final CountDownLatch countDownLatch = new CountDownLatch(1);
     private final ReentrantLock lock = new ReentrantLock();
     private final List<Class<?>> clazzList = new ArrayList<>();
+    private final BlockingQueue<Task> fireQueue = new LinkedBlockingQueue<>();
+    private boolean fireThreadStatus = false;
 
     public StdScheduler() {
-        this.queue = new ScheduleQueue();
+        this.taskQueue = new ScheduleQueue();
         this.config = ScheduleConfig.parseConfig();
     }
 
@@ -96,7 +93,7 @@ public class StdScheduler implements Scheduler, Runnable {
 
         long priority = trigger.nextFireTime(System.currentTimeMillis());
         Task task = new Task(job, trigger, priority, false);
-        queue.offer(task);
+        taskQueue.offer(task);
     }
 
     @Override
@@ -105,7 +102,7 @@ public class StdScheduler implements Scheduler, Runnable {
 
         findTask(key).ifPresent(task -> {
             task.setCancel(true);
-            queue.remove(task);
+            taskQueue.remove(task);
             System.out.printf("remove %s task\n", task.getJob().description());
             result.set(true);
         });
@@ -116,7 +113,7 @@ public class StdScheduler implements Scheduler, Runnable {
     private Optional<Task> findTask(int key) {
         lock.lock();
         try {
-            return queue.stream()
+            return taskQueue.stream()
                     .filter(task -> task.getJob().key() == key)
                     .findFirst();
         } finally {
@@ -145,45 +142,89 @@ public class StdScheduler implements Scheduler, Runnable {
     @Override
     public void run() {
         while (running) {
-            Task task = queue.peek();
-
+            Task task = taskQueue.peek();
             Objects.requireNonNull(task, "task must not be null");
-
             if (task.isCancel()) {
-                queue.poll();
+                taskQueue.poll();
                 continue;
             }
-
 
             // 不加锁的话，会导致 findTask 无法获取指定的 task，从而删除不了任务
             // 因为执行任务后，会 poll 任务，到后面的 offer task 时会有一个空档期
             // 如果在该空档期获取 task，会使得 task 在 queue 中无法找到
             lock.lock();
-            // 时间未到
-            if (task.getPriority() > System.currentTimeMillis()) {
+            long timeMillis = System.currentTimeMillis();
+            if (timeMillis > task.getPriority()) {
+                this.executeTask(taskQueue.poll());
+            } else if (task.getPriority() - timeMillis <= 50) {
+                this.fireQueue.offer(Objects.requireNonNull(taskQueue.poll()));
+                if (!fireThreadStatus) {
+                    this.executor.submit(new FireRunnable(Duration.ofSeconds(60)));
+                    this.fireThreadStatus = true;
+                }
+            } else {
                 lock.unlock();
-                sleep();
+                sleep(Duration.ofMillis(50));
                 continue;
             }
 
-            executor.submit(() -> task.getJob().execute());
-            queue.poll();
-
-            long nextFireTime = task.getTrigger().nextFireTime(task.getPriority());
-            if (nextFireTime != -1) {
-                task.setPriority(nextFireTime);
-                queue.offer(task);
-            }
-
-            lock.unlock();
+            this.lock.unlock();
         }
     }
 
-    private void sleep() {
+    private void executeTask(Task task) {
+        if (task == null || task.isCancel()) {
+            return;
+        }
+
+        this.executor.submit(() -> task.getJob().execute());
+        // reschedule task
+        long nextFireTime = task.getTrigger().nextFireTime(task.getPriority());
+        if (nextFireTime != -1) {
+            task.setPriority(nextFireTime);
+            taskQueue.offer(task);
+        }
+    }
+
+    private void sleep(Duration duration) {
         try {
-            Thread.sleep(50L);
+            Thread.sleep(duration.toMillis());
         } catch (InterruptedException e) {
             e.printStackTrace();
+        }
+    }
+
+    class FireRunnable implements Runnable {
+
+        private Date clock = new Date();
+        private final Duration duration;
+
+        public FireRunnable(Duration duration) {
+            this.duration = duration;
+        }
+
+        @Override
+        public void run() {
+            while (!isTimeout()) {
+                Task task = fireQueue.peek();
+                if (task == null) {
+                    continue;
+                }
+
+                if (System.currentTimeMillis() > task.getPriority()) {
+                    executeTask(fireQueue.poll());
+                    this.clock = new Date();
+                }
+
+                sleep(Duration.ofMillis(1));
+            }
+
+            fireThreadStatus = false;
+        }
+
+        private boolean isTimeout() {
+            return clock.getTime() - System.currentTimeMillis()
+                    > duration.toMillis();
         }
     }
 

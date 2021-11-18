@@ -79,7 +79,7 @@ public class StdSchedulerTest {
         Job job = JobFactory.newRunnableJob("cron", () -> {
             System.out.println("hello cron");
         });
-        Trigger trigger = TriggerFactory.newCronTrigger("0 0 1-3 * * * *");
+        Trigger trigger = TriggerFactory.newCronTrigger("1/5 * * * * * *");
         scheduler.scheduleJob(job, trigger);
         scheduler.waitShutdown();
     }
