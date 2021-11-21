@@ -29,7 +29,7 @@ public class StdScheduler implements Scheduler, Runnable {
     private final ReentrantLock lock = new ReentrantLock();
     private final List<Class<?>> clazzList = new ArrayList<>();
     private final BlockingQueue<Task> fireQueue = new LinkedBlockingQueue<>();
-    private boolean fireThreadStatus = false;
+    private final AtomicBoolean fireThreadStatus = new AtomicBoolean(false);
 
     public StdScheduler() {
         this.taskQueue = new ScheduleQueue();
@@ -153,22 +153,27 @@ public class StdScheduler implements Scheduler, Runnable {
             // 因为执行任务后，会 poll 任务，到后面的 offer task 时会有一个空档期
             // 如果在该空档期获取 task，会使得 task 在 queue 中无法找到
             lock.lock();
-            long timeMillis = System.currentTimeMillis();
-            if (timeMillis > task.getPriority()) {
-                this.executeTask(taskQueue.poll());
-            } else if (task.getPriority() - timeMillis <= 50) {
-                this.fireQueue.offer(Objects.requireNonNull(taskQueue.poll()));
-                if (!fireThreadStatus) {
-                    this.executor.submit(new FireRunnable(Duration.ofSeconds(60)));
-                    this.fireThreadStatus = true;
+            boolean sleep = false;
+            try {
+                long timeMillis = System.currentTimeMillis();
+                if (timeMillis > task.getPriority()) {
+                    this.executeTask(taskQueue.poll());
+                } else if (task.getPriority() - timeMillis <= 50) {
+                    this.fireQueue.offer(Objects.requireNonNull(taskQueue.poll()));
+                    if (!fireThreadStatus.get()) {
+                        this.executor.submit(new FireRunnable(Duration.ofSeconds(60)));
+                        this.fireThreadStatus.set(true);
+                    }
+                } else {
+                    sleep = true;
                 }
-            } else {
-                lock.unlock();
-                sleep(Duration.ofMillis(50));
-                continue;
+            } finally {
+                this.lock.unlock();
             }
 
-            this.lock.unlock();
+            if (sleep) {
+                sleep(Duration.ofMillis(50));
+            }
         }
     }
 
@@ -219,7 +224,7 @@ public class StdScheduler implements Scheduler, Runnable {
                 sleep(Duration.ofMillis(1));
             }
 
-            fireThreadStatus = false;
+            fireThreadStatus.set(false);
         }
 
         private boolean isTimeout() {
