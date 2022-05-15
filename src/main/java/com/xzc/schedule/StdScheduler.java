@@ -8,9 +8,13 @@ import com.xzc.annotation.ScheduleAnnotationScanner;
 import com.xzc.job.JobFactory;
 import com.xzc.queue.ScheduleQueue;
 import com.xzc.trigger.TriggerFactory;
+import org.tinylog.Logger;
 
 import java.time.Duration;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
@@ -28,8 +32,6 @@ public class StdScheduler implements Scheduler, Runnable {
     private final CountDownLatch countDownLatch = new CountDownLatch(1);
     private final ReentrantLock lock = new ReentrantLock();
     private final List<Class<?>> clazzList = new ArrayList<>();
-    private final BlockingQueue<Task> fireQueue = new LinkedBlockingQueue<>();
-    private final AtomicBoolean fireThreadStatus = new AtomicBoolean(false);
 
     public StdScheduler() {
         this.taskQueue = new ScheduleQueue();
@@ -41,13 +43,14 @@ public class StdScheduler implements Scheduler, Runnable {
         this.executor = new ThreadPoolExecutor(config.getCoreThreadNum(), config.getMaxThreadNum(),
                 60, TimeUnit.SECONDS, new LinkedBlockingQueue<>());
 
-        startAnnotationSchedule();
+        scanAnnotationSchedule();
         this.running = true;
         startScheduleThread();
+        Logger.info("scheduler started successfully");
     }
 
 
-    private void startAnnotationSchedule() {
+    private void scanAnnotationSchedule() {
         if (clazzList.isEmpty()) {
             return;
         }
@@ -91,8 +94,9 @@ public class StdScheduler implements Scheduler, Runnable {
         context.set("trigger", this);
         trigger.setContext(context);
 
-        long priority = trigger.nextFireTime(System.currentTimeMillis());
-        Task task = new Task(job, trigger, priority, false);
+        // 获取下次运行时间
+        long nextFireTime = trigger.nextFireTime(System.currentTimeMillis());
+        Task task = new Task(job, trigger, nextFireTime, false);
         taskQueue.offer(task);
     }
 
@@ -103,7 +107,7 @@ public class StdScheduler implements Scheduler, Runnable {
         findTask(key).ifPresent(task -> {
             task.setCancel(true);
             taskQueue.remove(task);
-            System.out.printf("remove %s task\n", task.getJob().description());
+            Logger.info("remove {} task", task.getJob().description());
             result.set(true);
         });
 
@@ -142,38 +146,32 @@ public class StdScheduler implements Scheduler, Runnable {
     @Override
     public void run() {
         while (running) {
-            Task task = taskQueue.peek();
-            Objects.requireNonNull(task, "task must not be null");
-            if (task.isCancel()) {
-                taskQueue.poll();
-                continue;
-            }
+            while (!taskQueue.isEmpty()) {
+                // 阻塞 peek，没有数据则进行等待
+                Task task = taskQueue.peek();
 
-            // 不加锁的话，会导致 findTask 无法获取指定的 task，从而删除不了任务
-            // 因为执行任务后，会 poll 任务，到后面的 offer task 时会有一个空档期
-            // 如果在该空档期获取 task，会使得 task 在 queue 中无法找到
-            lock.lock();
-            boolean sleep = false;
-            try {
-                long timeMillis = System.currentTimeMillis();
-                if (timeMillis > task.getPriority()) {
-                    this.executeTask(taskQueue.poll());
-                } else if (task.getPriority() - timeMillis <= 50) {
-                    this.fireQueue.offer(Objects.requireNonNull(taskQueue.poll()));
-                    if (!fireThreadStatus.get()) {
-                        this.executor.submit(new FireRunnable(Duration.ofSeconds(60)));
-                        this.fireThreadStatus.set(true);
-                    }
-                } else {
-                    sleep = true;
+                // 任务取消
+                if (task.isCancel()) {
+                    taskQueue.poll();
+                    continue;
                 }
-            } finally {
-                this.lock.unlock();
+
+                long timeMillis = System.currentTimeMillis();
+                // task 运行时间大于当前时间，则无需继续处理
+                if (timeMillis < task.getPriority()) {
+                    break;
+                }
+
+                // 任务出队时，需要加锁处理
+                try {
+                    lock.lock();
+                    executeTask(taskQueue.poll());
+                } finally {
+                    lock.unlock();
+                }
             }
 
-            if (sleep) {
-                sleep(Duration.ofMillis(50));
-            }
+            sleep(Duration.ofMillis(50));
         }
     }
 
@@ -196,40 +194,6 @@ public class StdScheduler implements Scheduler, Runnable {
             Thread.sleep(duration.toMillis());
         } catch (InterruptedException e) {
             e.printStackTrace();
-        }
-    }
-
-    class FireRunnable implements Runnable {
-
-        private Date clock = new Date();
-        private final Duration duration;
-
-        public FireRunnable(Duration duration) {
-            this.duration = duration;
-        }
-
-        @Override
-        public void run() {
-            while (!isTimeout()) {
-                Task task = fireQueue.peek();
-                if (task == null) {
-                    continue;
-                }
-
-                if (System.currentTimeMillis() > task.getPriority()) {
-                    executeTask(fireQueue.poll());
-                    this.clock = new Date();
-                }
-
-                sleep(Duration.ofMillis(1));
-            }
-
-            fireThreadStatus.set(false);
-        }
-
-        private boolean isTimeout() {
-            return clock.getTime() - System.currentTimeMillis()
-                    > duration.toMillis();
         }
     }
 

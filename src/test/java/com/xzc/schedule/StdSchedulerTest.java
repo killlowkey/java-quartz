@@ -31,23 +31,40 @@ public class StdSchedulerTest {
     }
 
     @Test
+    public void testSchedule() throws Exception {
+        Job job1 = JobFactory.newRunnableJob("job1", () -> {
+            System.out.println("job1: hello world");
+        });
+        Job job2 = JobFactory.newRunnableJob("job2", () -> {
+            System.out.println("job2: hello world");
+        });
+
+        Trigger trigger1 = TriggerFactory.newRunOnceTrigger(Duration.ofSeconds(5));
+        Trigger trigger2 = TriggerFactory.newSimpleTrigger(Duration.ofSeconds(3));
+        scheduler.scheduleJob(job1, trigger1);
+        scheduler.scheduleJob(job2, trigger2);
+
+        scheduler.waitShutdown();
+    }
+
+    @Test
     public void testScheduleTask() throws Exception {
-//        Job job1 = JobFactory.newRunnableJob("job1", () -> {
-//            System.out.println("job1: hello world");
-//        });
+        Job job1 = JobFactory.newRunnableJob("job1", () -> {
+            System.out.println("job1: hello world");
+        });
 
         Job job2 = JobFactory.newRunnableJob("job2", () -> {
             System.out.println("job2: hello world");
         });
 
-//        Job job3 = JobFactory.newRunnableJob("job3", () -> {
-//            count++;
-//            if (count == 5) {
-//                scheduler.deleteJob("job3".hashCode());
-////                scheduler.stop();
-//            }
-//            System.out.println(Thread.currentThread().getName() + " job3: hello world");
-//        });
+        Job job3 = JobFactory.newRunnableJob("job3", () -> {
+            count++;
+            if (count == 5) {
+                scheduler.deleteJob("job3".hashCode());
+//                scheduler.stop();
+            }
+            System.out.println(Thread.currentThread().getName() + " job3: hello world");
+        });
 
 //        Trigger trigger1 = TriggerFactory.newTimeStrTrigger("2021-11-07 16:27:59.980");
         Trigger trigger2 = TriggerFactory.newRunOnceTrigger(Duration.ofSeconds(5));
@@ -55,7 +72,7 @@ public class StdSchedulerTest {
 
 //        scheduler.scheduleJob(job1, trigger1);
         scheduler.scheduleJob(job2, trigger2);
-//        scheduler.scheduleJob(job3, trigger3);
+        scheduler.scheduleJob(job3, trigger3);
 
         scheduler.waitShutdown();
     }

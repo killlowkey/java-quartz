@@ -2,12 +2,15 @@ package com.xzc.queue;
 
 import com.xzc.schedule.Task;
 import com.xzc.util.CommonUtil;
+import org.tinylog.Logger;
 
 import java.util.PriorityQueue;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
+ * 调度队列实现
+ *
  * @author Ray
  * @date created in 2021/11/7 21:05
  */
@@ -20,8 +23,10 @@ public class ScheduleQueue extends PriorityQueue<Task> {
     public boolean offer(Task task) {
         lock.lock();
         try {
-            System.out.printf("【%s】下次运行时间：%s\n", task.getJob().description(),
-                    CommonUtil.formatMillis(task.getPriority()));
+            if (Logger.isDebugEnabled()) {
+                Logger.debug("【{}】下次运行时间：{}", task.getJob().description(),
+                        CommonUtil.formatMillis(task.getPriority()));
+            }
             return super.offer(task);
         } finally {
             empty.signalAll();

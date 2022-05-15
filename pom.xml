@@ -13,6 +13,7 @@
         <maven.compiler.target>11</maven.compiler.target>
         <junit.version>4.13.2</junit.version>
         <lombok.version>1.18.20</lombok.version>
+        <tinylog.version>2.4.1</tinylog.version>
     </properties>
 
     <dependencies>
@@ -27,6 +28,18 @@
             <artifactId>junit</artifactId>
             <version>${junit.version}</version>
             <scope>test</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.tinylog</groupId>
+            <artifactId>tinylog-api</artifactId>
+            <version>${tinylog.version}</version>
+        </dependency>
+
+        <dependency>
+            <groupId>org.tinylog</groupId>
+            <artifactId>tinylog-impl</artifactId>
+            <version>${tinylog.version}</version>
         </dependency>
 
     </dependencies>
